@@ -1,21 +1,50 @@
 'use client'
 
-import { useState } from 'react'
-import { Copy, CheckCheck, ExternalLink, Check, AlertCircle, Loader2, Settings } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Copy, CheckCheck, ExternalLink, Check, AlertCircle, Loader2, Settings, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function CredentialsPage() {
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [isConfigured, setIsConfigured] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
-  const callbackUrl = typeof window !== 'undefined' 
-    ? `${window.location.origin}/api/oauth/callback`
-    : 'https://agentauth.dev/api/oauth/callback'
+  const callbackUrl = 'https://agentauth.online/api/oauth/callback'
+
+  useEffect(() => {
+    loadCredentials()
+  }, [])
+
+  const loadCredentials = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const response = await fetch('/api/credentials')
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load credentials')
+      }
+
+      if (data.credentials) {
+        setClientId(data.credentials.clientId || '')
+        setIsConfigured(true)
+      } else {
+        setIsConfigured(false)
+      }
+    } catch (err) {
+      console.error('Failed to load credentials:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load credentials')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(callbackUrl)
@@ -35,12 +64,34 @@ export default function CredentialsPage() {
 
     setIsSaving(true)
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    setIsConfigured(true)
-    setSuccess(true)
-    setIsSaving(false)
+    try {
+      const response = await fetch('/api/credentials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientId: clientId.trim(),
+          clientSecret: clientSecret.trim(),
+          redirectUri: callbackUrl,
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save credentials')
+      }
+
+      setIsConfigured(true)
+      setSuccess(true)
+      setClientSecret('') // Clear secret after saving
+    } catch (err) {
+      console.error('Failed to save credentials:', err)
+      setError(err instanceof Error ? err.message : 'Failed to save credentials')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const steps = [
@@ -68,9 +119,9 @@ export default function CredentialsPage() {
       title: 'Create OAuth Credentials',
       content: (
         <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
-          <li>Go to APIs & Services → Credentials</li>
-          <li>Click "Create Credentials" → "OAuth client ID"</li>
-          <li>Select "Web application"</li>
+          <li>Go to APIs & Services then Credentials</li>
+          <li>Click Create Credentials then OAuth client ID</li>
+          <li>Select Web application</li>
           <li>
             Add this redirect URI:
             <div className="mt-2 flex items-center gap-2 p-3 rounded-lg bg-muted border border-border">
@@ -99,9 +150,19 @@ export default function CredentialsPage() {
     }
   ]
 
+  if (isLoading) {
+    return (
+      <div className="max-w-3xl space-y-8">
+        <div className="flex items-center justify-center py-12">
+          <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-muted-foreground">Loading credentials...</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-3xl space-y-8">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold">Google OAuth Credentials</h1>
         <p className="text-muted-foreground mt-1">
@@ -109,7 +170,6 @@ export default function CredentialsPage() {
         </p>
       </div>
 
-      {/* Status */}
       <div className={cn(
         "flex items-center gap-3 p-4 rounded-xl border",
         isConfigured 
@@ -139,7 +199,6 @@ export default function CredentialsPage() {
         )}
       </div>
 
-      {/* Setup Steps */}
       <div className="space-y-6">
         {steps.map((step, i) => (
           <div key={i} className="p-6 rounded-2xl bg-card border border-border">
@@ -177,12 +236,12 @@ export default function CredentialsPage() {
                     </div>
 
                     <div>
-                      <label className="label">Client Secret</label>
+                      <label className="label">Client Secret {isConfigured && '(enter new value to update)'}</label>
                       <input
                         type="password"
                         value={clientSecret}
                         onChange={(e) => setClientSecret(e.target.value)}
-                        placeholder="GOCSPX-xxxxxxxxxxxxxxxxxx"
+                        placeholder={isConfigured ? "Enter new secret to update" : "GOCSPX-xxxxxxxxxxxxxxxxxx"}
                         className="input"
                       />
                     </div>
@@ -200,7 +259,7 @@ export default function CredentialsPage() {
                       ) : (
                         <>
                           <Settings className="w-4 h-4" />
-                          Save credentials
+                          {isConfigured ? 'Update credentials' : 'Save credentials'}
                         </>
                       )}
                     </button>
@@ -212,7 +271,6 @@ export default function CredentialsPage() {
         ))}
       </div>
 
-      {/* Info */}
       <div className="p-4 rounded-xl bg-muted/50 border border-border">
         <p className="text-sm text-muted-foreground">
           <strong className="text-foreground">Why do I need to add my own credentials?</strong>
